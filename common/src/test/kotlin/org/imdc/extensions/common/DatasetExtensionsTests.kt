@@ -57,11 +57,9 @@ class DatasetExtensionsTests : JythonTest(
     private fun Dataset.asClue(assertions: (Dataset) -> Unit) {
         withClue(
             {
-                lazy {
-                    buildString {
-                        printDataset(this, this@asClue, true)
-                    }
-                }.value
+                buildString {
+                    printDataset(this, this@asClue, true)
+                }
             },
         ) {
             assertions(this)
