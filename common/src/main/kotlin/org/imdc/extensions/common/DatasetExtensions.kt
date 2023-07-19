@@ -3,8 +3,11 @@ package org.imdc.extensions.common
 import com.inductiveautomation.ignition.common.Dataset
 import com.inductiveautomation.ignition.common.PyUtilities
 import com.inductiveautomation.ignition.common.TypeUtilities
+import com.inductiveautomation.ignition.common.datasource.DatasourceMeta
 import com.inductiveautomation.ignition.common.script.PyArgParser
+import com.inductiveautomation.ignition.common.script.builtin.AbstractDBUtilities
 import com.inductiveautomation.ignition.common.script.builtin.KeywordArgs
+import com.inductiveautomation.ignition.common.script.builtin.SProcCall
 import com.inductiveautomation.ignition.common.script.hints.ScriptArg
 import com.inductiveautomation.ignition.common.script.hints.ScriptFunction
 import com.inductiveautomation.ignition.common.util.DatasetBuilder
@@ -28,6 +31,7 @@ import org.python.core.PyType
 import org.python.core.PyUnicode
 import java.io.File
 import java.math.BigDecimal
+import java.sql.SQLException
 import java.util.Date
 import kotlin.jvm.optionals.getOrElse
 import kotlin.math.max
@@ -250,6 +254,45 @@ object DatasetExtensions {
                 )
             },
         )
+    }
+
+    @Suppress("unused")
+    @ScriptFunction(docBundlePrefix = "DatasetExtensions")
+    @KeywordArgs(
+        names = ["dataset", "table", "database", "tx", "getKey", "skipAudit"],
+        types = [Dataset::class, String::class, String::class, String::class, Boolean::class, Boolean::class],
+    )
+    fun toSQL(args: Array<PyObject>, keywords: Array<String>): Int {
+        val parserArgs = PyArgParser.parseArgs(
+            args,
+            keywords,
+            arrayOf("dataset", "table", "database", "tx", "getKey", "skipAudit"),
+            Array(6) { Any::class.java },
+            "toSQL",
+        )
+        val dataset = parserArgs.requirePyObject("dataset").toJava<Dataset>()
+        val table = parserArgs.requireString("table")
+        val database = parserArgs.requireString("database")
+        val tx = parserArgs.requireString("tx")
+        val getKey = parserArgs.getBoolean("getKey").orElse(false)
+        val skipAudit = parserArgs.getBoolean("skipAudit").orElse(false)
+        val columnHeaders = dataset.columnIndices.joinToString(",") { dataset.getColumnName(it) }
+        var rowsAffected = -1
+        for (row in dataset.rowIndices) {
+            val rowValues = dataset.columnIndices.map { col ->
+                dataset[row, col]
+            }
+            val placeholders = List(rowValues.size) { "?" }.joinToString(",")
+            rowsAffected = CustomDBUtilities().runPrepUpdate(
+                "INSERT INTO $table ($columnHeaders) VALUES ($placeholders)",
+                rowValues,
+                database,
+                tx,
+                getKey,
+                skipAudit,
+            )
+        }
+        return rowsAffected
     }
 
     @Suppress("unused")
@@ -502,5 +545,85 @@ object DatasetExtensions {
         PyLong.TYPE -> Long::class.java
         PyFloat.TYPE -> Double::class.java
         else -> toJava<Class<*>>()
+    }
+
+    class CustomDBUtilities : AbstractDBUtilities() {
+        fun runPrepUpdate(
+            p0: String?,
+            p1: List<Any?>,
+            p2: String?,
+            p3: String?,
+            p4: Boolean,
+            p5: Boolean,
+        ): Int {
+            try {
+                runPrepUpdate(
+                    arrayOf(Py.java2py(p0), Py.java2py(p1), Py.java2py(p2), Py.java2py(p3), Py.java2py(p4), Py.java2py(p5)),
+                    arrayOf(),
+                )
+            } catch (e: SQLException) {
+                // Handle the exception
+                return -1
+            }
+            return 0
+        }
+
+        override fun _runUpdateQuery(
+            p0: String?,
+            p1: String?,
+            p2: String?,
+            p3: Boolean,
+            p4: Boolean,
+        ): Int {
+            TODO("Not yet implemented")
+        }
+
+        override fun _runPrepStmt(
+            p0: String?,
+            p1: String?,
+            p2: String?,
+            p3: Boolean,
+            p4: Boolean,
+            p5: Array<out Any>?,
+        ): Int {
+            TODO("Not yet implemented")
+        }
+
+        override fun _runPrepQuery(
+            p0: String?,
+            p1: String?,
+            p2: String?,
+            p3: Array<out Any>?,
+        ): Dataset {
+            TODO("Not yet implemented")
+        }
+
+        override fun _runQuery(p0: String?, p1: String?, p2: String?): Dataset {
+            TODO("Not yet implemented")
+        }
+
+        override fun _findDatasources(): MutableList<out DatasourceMeta> {
+            TODO("Not yet implemented")
+        }
+
+        override fun _beginTransaction(p0: String?, p1: Int, p2: Long): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun _commitTransaction(p0: String?) {
+            TODO("Not yet implemented")
+        }
+
+        override fun _rollbackTransaction(p0: String?) {
+            TODO("Not yet implemented")
+        }
+
+        override fun _closeTransaction(p0: String?) {
+            TODO("Not yet implemented")
+        }
+
+        override fun _call(p0: SProcCall?) {
+            TODO("Not yet implemented")
+        }
     }
 }
