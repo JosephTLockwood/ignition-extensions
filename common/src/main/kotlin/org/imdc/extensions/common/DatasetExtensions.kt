@@ -3,11 +3,8 @@ package org.imdc.extensions.common
 import com.inductiveautomation.ignition.common.Dataset
 import com.inductiveautomation.ignition.common.PyUtilities
 import com.inductiveautomation.ignition.common.TypeUtilities
-import com.inductiveautomation.ignition.common.datasource.DatasourceMeta
 import com.inductiveautomation.ignition.common.script.PyArgParser
-import com.inductiveautomation.ignition.common.script.builtin.AbstractDBUtilities
 import com.inductiveautomation.ignition.common.script.builtin.KeywordArgs
-import com.inductiveautomation.ignition.common.script.builtin.SProcCall
 import com.inductiveautomation.ignition.common.script.hints.ScriptArg
 import com.inductiveautomation.ignition.common.script.hints.ScriptFunction
 import com.inductiveautomation.ignition.common.util.DatasetBuilder
@@ -31,7 +28,6 @@ import org.python.core.PyType
 import org.python.core.PyUnicode
 import java.io.File
 import java.math.BigDecimal
-import java.sql.SQLException
 import java.util.Date
 import kotlin.jvm.optionals.getOrElse
 import kotlin.math.max
@@ -54,7 +50,8 @@ object DatasetExtensions {
         )
         val dataset = parsedArgs.requirePyObject("dataset").toJava<Dataset>()
         val mapper = parsedArgs.requirePyObject("mapper")
-        val preserveColumnTypes = parsedArgs.getBoolean("preserveColumnTypes").filter { it }.isPresent
+        val preserveColumnTypes =
+            parsedArgs.getBoolean("preserveColumnTypes").filter { it }.isPresent
 
         val columnTypes = if (preserveColumnTypes) {
             dataset.columnTypes
@@ -62,7 +59,8 @@ object DatasetExtensions {
             List(dataset.columnCount) { Any::class.java }
         }
 
-        val builder = DatasetBuilder.newBuilder().colNames(dataset.columnNames).colTypes(columnTypes)
+        val builder =
+            DatasetBuilder.newBuilder().colNames(dataset.columnNames).colTypes(columnTypes)
 
         for (row in dataset.rowIndices) {
             val columnValues = Array<PyObject>(dataset.columnCount) { col ->
@@ -148,7 +146,11 @@ object DatasetExtensions {
         return printDataset(appendable, dataset, includeTypes)
     }
 
-    internal fun printDataset(appendable: Appendable, dataset: Dataset, includeTypes: Boolean = false) {
+    internal fun printDataset(
+        appendable: Appendable,
+        dataset: Dataset,
+        includeTypes: Boolean = false,
+    ) {
         val typeNames = List<String>(dataset.columnCount) { column ->
             if (includeTypes) {
                 dataset.getColumnType(column).simpleName
@@ -259,40 +261,28 @@ object DatasetExtensions {
     @Suppress("unused")
     @ScriptFunction(docBundlePrefix = "DatasetExtensions")
     @KeywordArgs(
-        names = ["dataset", "table", "database", "tx", "getKey", "skipAudit"],
-        types = [Dataset::class, String::class, String::class, String::class, Boolean::class, Boolean::class],
+        names = ["dataset", "table"],
+        types = [Dataset::class, String::class],
     )
-    fun toSQL(args: Array<PyObject>, keywords: Array<String>): Int {
+    fun insertDataset(args: Array<PyObject>, keywords: Array<String>): List<Any> {
         val parserArgs = PyArgParser.parseArgs(
             args,
             keywords,
-            arrayOf("dataset", "table", "database", "tx", "getKey", "skipAudit"),
-            Array(6) { Any::class.java },
-            "toSQL",
+            arrayOf("dataset", "table"),
+            Array(2) { Any::class.java },
+            "insertDataset",
         )
         val dataset = parserArgs.requirePyObject("dataset").toJava<Dataset>()
         val table = parserArgs.requireString("table")
-        val database = parserArgs.requireString("database")
-        val tx = parserArgs.requireString("tx")
-        val getKey = parserArgs.getBoolean("getKey").orElse(false)
-        val skipAudit = parserArgs.getBoolean("skipAudit").orElse(false)
-        val columnHeaders = dataset.columnIndices.joinToString(",") { dataset.getColumnName(it) }
-        var rowsAffected = -1
-        for (row in dataset.rowIndices) {
-            val rowValues = dataset.columnIndices.map { col ->
-                dataset[row, col]
-            }
-            val placeholders = List(rowValues.size) { "?" }.joinToString(",")
-            rowsAffected = CustomDBUtilities().runPrepUpdate(
-                "INSERT INTO $table ($columnHeaders) VALUES ($placeholders)",
-                rowValues,
-                database,
-                tx,
-                getKey,
-                skipAudit,
-            )
+
+        val columnNames = dataset.columnNames.joinToString(", ")
+        val valuePlaceholders = dataset.columnIndices.joinToString { "?" }
+        val insertString = "INSERT INTO $table ($columnNames) VALUES " + dataset.rowIndices.joinToString { "($valuePlaceholders)" }
+        val valueList = dataset.rowIndices.flatMap { row ->
+            dataset.columnIndices.map { col -> dataset[row, col] }
         }
-        return rowsAffected
+
+        return listOf(insertString, valueList)
     }
 
     @Suppress("unused")
@@ -336,7 +326,8 @@ object DatasetExtensions {
             val sheet = workbook.getSheetAt(sheetNumber)
 
             val headerRow = parsedArgs.getInteger("headerRow").orElse(-1)
-            val firstRow = parsedArgs.getInteger("firstRow").orElseGet { max(sheet.firstRowNum, headerRow + 1) }
+            val firstRow = parsedArgs.getInteger("firstRow")
+                .orElseGet { max(sheet.firstRowNum, headerRow + 1) }
             val lastRow = parsedArgs.getInteger("lastRow").orElseGet { sheet.lastRowNum }
 
             val dataRange = firstRow..lastRow
@@ -352,7 +343,8 @@ object DatasetExtensions {
             val firstColumn =
                 parsedArgs.getInteger("firstColumn").orElseGet { columnRow.firstCellNum.toInt() }
             val lastColumn =
-                parsedArgs.getInteger("lastColumn").map { it + 1 }.orElseGet { columnRow.lastCellNum.toInt() }
+                parsedArgs.getInteger("lastColumn").map { it + 1 }
+                    .orElseGet { columnRow.lastCellNum.toInt() }
             if (firstColumn >= lastColumn) {
                 throw Py.ValueError("firstColumn ($firstColumn) must be less than lastColumn ($lastColumn)")
             }
@@ -545,85 +537,5 @@ object DatasetExtensions {
         PyLong.TYPE -> Long::class.java
         PyFloat.TYPE -> Double::class.java
         else -> toJava<Class<*>>()
-    }
-
-    class CustomDBUtilities : AbstractDBUtilities() {
-        fun runPrepUpdate(
-            p0: String?,
-            p1: List<Any?>,
-            p2: String?,
-            p3: String?,
-            p4: Boolean,
-            p5: Boolean,
-        ): Int {
-            try {
-                runPrepUpdate(
-                    arrayOf(Py.java2py(p0), Py.java2py(p1), Py.java2py(p2), Py.java2py(p3), Py.java2py(p4), Py.java2py(p5)),
-                    arrayOf(),
-                )
-            } catch (e: SQLException) {
-                // Handle the exception
-                return -1
-            }
-            return 0
-        }
-
-        override fun _runUpdateQuery(
-            p0: String?,
-            p1: String?,
-            p2: String?,
-            p3: Boolean,
-            p4: Boolean,
-        ): Int {
-            TODO("Not yet implemented")
-        }
-
-        override fun _runPrepStmt(
-            p0: String?,
-            p1: String?,
-            p2: String?,
-            p3: Boolean,
-            p4: Boolean,
-            p5: Array<out Any>?,
-        ): Int {
-            TODO("Not yet implemented")
-        }
-
-        override fun _runPrepQuery(
-            p0: String?,
-            p1: String?,
-            p2: String?,
-            p3: Array<out Any>?,
-        ): Dataset {
-            TODO("Not yet implemented")
-        }
-
-        override fun _runQuery(p0: String?, p1: String?, p2: String?): Dataset {
-            TODO("Not yet implemented")
-        }
-
-        override fun _findDatasources(): MutableList<out DatasourceMeta> {
-            TODO("Not yet implemented")
-        }
-
-        override fun _beginTransaction(p0: String?, p1: Int, p2: Long): String {
-            TODO("Not yet implemented")
-        }
-
-        override fun _commitTransaction(p0: String?) {
-            TODO("Not yet implemented")
-        }
-
-        override fun _rollbackTransaction(p0: String?) {
-            TODO("Not yet implemented")
-        }
-
-        override fun _closeTransaction(p0: String?) {
-            TODO("Not yet implemented")
-        }
-
-        override fun _call(p0: SProcCall?) {
-            TODO("Not yet implemented")
-        }
     }
 }
