@@ -8,12 +8,16 @@ class DSBuilder {
 
     val columns = mutableListOf<Column>()
 
-    inline fun <reified T> column(name: String, data: List<T>) {
-        columns.add(Column(name, data, T::class.java))
+    inline fun <reified T> column(name: String, vararg data: T) {
+        columns.add(Column(name, data.toList(), T::class.java))
     }
 
     inline fun <reified T> column(name: String, builder: MutableList<T>.() -> Unit) {
         column(name, buildList(builder))
+    }
+
+    inline fun <reified T> column(name: String, data: List<T>) {
+        columns.add(Column(name, data, T::class.java))
     }
 
     fun build(): Dataset {

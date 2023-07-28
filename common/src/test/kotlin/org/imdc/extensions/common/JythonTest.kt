@@ -7,6 +7,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.core.test.TestCase
 import io.kotest.matchers.Matcher
 import io.kotest.matchers.MatcherResult
+import io.kotest.matchers.should
 import org.intellij.lang.annotations.Language
 import org.python.core.CompileMode
 import org.python.core.CompilerFlags
@@ -58,10 +59,18 @@ abstract class JythonTest(init: FunSpec.(globals: PyStringMap) -> Unit) : FunSpe
         try {
             case()
         } catch (exception: PyException) {
-            PyExceptionTypeMatcher(exception).test(type)
+            exception should beException(type)
             return
         }
         fail("Expected a $type to be thrown, but nothing was thrown")
+    }
+
+    private fun beException(type: PyObject): Matcher<PyException> = Matcher { e ->
+        MatcherResult(
+            e.match(type),
+            failureMessageFn = { "Expected a $type, but was $e" },
+            negatedFailureMessageFn = { "Result should not be a $type, but was $e" },
+        )
     }
 
     companion object {
@@ -78,16 +87,6 @@ abstract class JythonTest(init: FunSpec.(globals: PyStringMap) -> Unit) : FunSpe
 
         operator fun PyStringMap.set(key: String, value: Any?) {
             return __setitem__(key, Py.java2py(value))
-        }
-
-        class PyExceptionTypeMatcher(val expected: PyException) : Matcher<PyObject> {
-            override fun test(value: PyObject): MatcherResult {
-                return MatcherResult(
-                    expected.match(value),
-                    failureMessageFn = { "Expected a $expected, but was $value" },
-                    negatedFailureMessageFn = { "Result should not be a $expected, but was $value" },
-                )
-            }
         }
     }
 }

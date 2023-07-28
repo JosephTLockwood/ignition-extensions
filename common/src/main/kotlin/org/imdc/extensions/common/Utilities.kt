@@ -2,6 +2,7 @@ package org.imdc.extensions.common
 
 import com.inductiveautomation.ignition.common.BundleUtil
 import com.inductiveautomation.ignition.common.Dataset
+import com.inductiveautomation.ignition.common.script.builtin.DatasetUtilities
 import org.python.core.Py
 import org.python.core.PyObject
 import java.lang.reflect.Method
@@ -30,6 +31,14 @@ val Dataset.columnIndices: IntRange
 
 operator fun Dataset.get(row: Int, col: Int): Any? {
     return getValueAt(row, col)
+}
+
+operator fun Dataset.get(row: Int, col: String): Any? {
+    return getValueAt(row, col)
+}
+
+operator fun Dataset.get(slice: IntRange): Dataset {
+    return DatasetUtilities.deleteRows(this, (rowIndices - slice).toIntArray())
 }
 
 inline fun <reified T> PyObject.toJava(): T {

@@ -6,8 +6,12 @@ import com.inductiveautomation.ignition.common.util.DatasetBuilder
 import io.kotest.assertions.asClue
 import io.kotest.assertions.withClue
 import io.kotest.engine.spec.tempfile
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import org.imdc.extensions.common.DSBuilder.Companion.dataset
+import org.imdc.extensions.common.DatasetExtensions.leftJoin
 import org.imdc.extensions.common.DatasetExtensions.printDataset
+import org.imdc.extensions.common.DatasetExtensions.rightJoin
 import org.python.core.Py
 import java.awt.Color
 import java.util.Date
@@ -17,50 +21,12 @@ class DatasetExtensionsTests : JythonTest(
     { globals ->
         globals["utils"] = DatasetExtensions
         globals["builder"] = DatasetBuilder.newBuilder()
-        globals["outerJoin1"] = DatasetBuilder.newBuilder()
-            .colNames("EmpID", "EmpName", "City", "Designation")
-            .colTypes(Int::class.javaObjectType, String::class.java, String::class.java, String::class.java)
-            .addRow(1, "Charlotte Robinson", "Chicago", "Consultant")
-            .addRow(2, "Madison Phillips", "Dallas", "Senior Analyst")
-            .addRow(3, "Emma Hernandez", "Phoenix", "Senior Analyst")
-            .addRow(4, "Samantha Sanchez", "San Diego", "Principal Conultant")
-            .addRow(5, "Sadie Ward", "San Antonio", "Consultant")
-            .addRow(6, "Savannah Perez", "New York", "Principal Conultant")
-            .addRow(7, "Victoria Gray", "Los Angeles", "Assistant")
-            .addRow(8, "Alyssa Lewis", "Houston", "Consultant")
-            .addRow(9, "Anna Lee", "San Jose", "Principal Conultant")
-            .addRow(10, "Riley Hall", "Philadelphia", "Senior Analyst")
-            .build()
-        globals["outerJoin2"] = DatasetBuilder.newBuilder()
-            .colNames("EmpID", "Department_ID", "DepartmentName")
-            .colTypes(Int::class.javaObjectType, Int::class.javaObjectType, String::class.java)
-            .addRow(1, 0, "Executive")
-            .addRow(2, 1, "Document Control")
-            .addRow(3, 2, "Finance")
-            .addRow(4, 3, "Engineering")
-            .addRow(5, 4, "Facilities and Maintenance")
-            .addRow(6, 2, "Finance")
-            .addRow(10, 4, "Facilities and Maintenance")
-            .build()
-
         globals["dataset"] = DatasetBuilder.newBuilder()
             .colNames("a", "b", "c")
             .colTypes(Int::class.javaObjectType, Double::class.javaObjectType, String::class.java)
             .addRow(1, 3.14, "pi")
             .addRow(2, 6.28, "tau")
             .build()
-        globals["dataset2"] = DatasetBuilder.newBuilder()
-            .colNames("a", "b2", "c2")
-            .colTypes(Int::class.javaObjectType, Double::class.javaObjectType, String::class.java)
-            .addRow(1, 3.1415, "pi2")
-            .addRow(2, 56, "tau2")
-            .build()
-
-        val tempArray: Array<Array<Int>> = arrayOf(
-            arrayOf(0, 1, 2),
-            arrayOf(3),
-        )
-        globals["splitAt"] = tempArray
 
         val excelSample =
             DatasetExtensionsTests::class.java.getResourceAsStream("sample.xlsx")!!.readAllBytes()
@@ -140,87 +106,6 @@ class DatasetExtensionsTests : JythonTest(
                     it.getColumnAsList(0) shouldBe listOf(2, 4)
                     it.getColumnAsList(1) shouldBe listOf(6.28, 12.56)
                     it.getColumnAsList(2) shouldBe listOf("pipi", "tautau")
-                }
-            }
-        }
-
-        context("Left Join test") {
-            test("Left Join") {
-                eval<Dataset>("utils.joiner(dataset, dataset2, 'left', lambda d1, d2: (d1[0] == d2[0]))").asClue {
-                    it.columnNames shouldBe listOf("a", "b", "c", "a", "b2", "c2")
-                    it.columnTypes shouldBe listOf(
-                        Int::class.javaObjectType,
-                        Double::class.javaObjectType,
-                        String::class.java,
-                        Int::class.javaObjectType,
-                        Double::class.javaObjectType,
-                        String::class.java,
-                    )
-                    it.rowCount shouldBe 2
-                    it.getColumnAsList(0) shouldBe listOf(1, 2)
-                    it.getColumnAsList(1) shouldBe listOf(3.14, 6.28)
-                    it.getColumnAsList(2) shouldBe listOf("pi", "tau")
-                    it.getColumnAsList(3) shouldBe listOf(1, 2)
-                    it.getColumnAsList(4) shouldBe listOf(3.1415, 56.0)
-                    it.getColumnAsList(5) shouldBe listOf("pi2", "tau2")
-                }
-            }
-        }
-
-        context("Right Join test") {
-            test("Right Join") {
-                eval<Dataset>("utils.joiner(outerJoin1, outerJoin2, 'right', lambda d1, d2: (d1[0] == d2[0]))").asClue {
-                    it.columnNames shouldBe listOf("EmpID", "EmpName", "City", "Designation", "EmpID", "Department_ID", "DepartmentName")
-                    it.columnTypes shouldBe listOf(
-                        Int::class.javaObjectType,
-                        String::class.java,
-                        String::class.java,
-                        String::class.java,
-                        Int::class.javaObjectType,
-                        Int::class.javaObjectType,
-                        String::class.java,
-                    )
-                    it.getColumnAsList(5) shouldBe listOf(0, 1, 2, 3, 4, 2, 4)
-                    it.rowCount shouldBe 7
-                }
-            }
-        }
-
-        // https://www.sqlshack.com/sql-outer-join-overview-and-examples/
-        context("Outer Join test") {
-            test("Outer Join") {
-                eval<Dataset>("utils.joiner(outerJoin1, outerJoin2, 'outer', lambda d1, d2: (d1[0] == d2[0]))").asClue {
-                    it.columnNames shouldBe listOf("EmpID", "EmpName", "City", "Designation", "EmpID", "Department_ID", "DepartmentName")
-                    it.columnTypes shouldBe listOf(
-                        Int::class.javaObjectType,
-                        String::class.java,
-                        String::class.java,
-                        String::class.java,
-                        Int::class.javaObjectType,
-                        Int::class.javaObjectType,
-                        String::class.java,
-                    )
-                    it.getColumnAsList(6) shouldBe listOf("Executive", "Document Control", "Finance", "Engineering", "Facilities and Maintenance", "Finance", null, null, null, "Facilities and Maintenance")
-                    it.rowCount shouldBe 10
-                }
-            }
-        }
-
-        context("Inner Join test") {
-            test("Inner Join") {
-                eval<Dataset>("utils.joiner(outerJoin1, outerJoin2, 'inner', lambda d1, d2: (d1[0] == d2[0]))").asClue {
-                    it.columnNames shouldBe listOf("EmpID", "EmpName", "City", "Designation", "EmpID", "Department_ID", "DepartmentName")
-                    it.columnTypes shouldBe listOf(
-                        Int::class.javaObjectType,
-                        String::class.java,
-                        String::class.java,
-                        String::class.java,
-                        Int::class.javaObjectType,
-                        Int::class.javaObjectType,
-                        String::class.java,
-                    )
-                    it.getColumnAsList(5) shouldBe listOf(0, 1, 2, 3, 4, 2, 4)
-                    it.rowCount shouldBe 7
                 }
             }
         }
@@ -738,6 +623,178 @@ class DatasetExtensionsTests : JythonTest(
                             .build()
                     """.trimIndent(),
                 )
+            }
+        }
+
+        context("Join") {
+            val left = dataset {
+                column("a") {
+                    add(1)
+                    add(2)
+                    add(3)
+                }
+                column("b") {
+                    add("a")
+                    add("b")
+                    add("c")
+                }
+            }
+            val right = dataset {
+                column("id") {
+                    add(1)
+                    add(2)
+                    add(4)
+                }
+                column("c") {
+                    add("extra")
+                    add("column")
+                    add("detail")
+                }
+            }
+
+            context("Left Join") {
+                test("Basic Join") {
+                    leftJoin(left, right) { leftRow, rightRow ->
+                        leftRow["a"] == rightRow["id"]
+                    }.asClue { leftJoined ->
+                        leftJoined.rowCount shouldBe 3
+                        leftJoined.columnCount shouldBe 4
+                        leftJoined[0, "c"] shouldBe "extra"
+                        leftJoined[1, "c"] shouldBe "column"
+                        leftJoined[2, "c"].shouldBeNull()
+                    }
+                }
+
+                test("Less rows on the right") {
+                    leftJoin(left, right[0..1]) { leftRow, rightRow ->
+                        leftRow["a"] == rightRow["id"]
+                    }.asClue { leftJoined ->
+                        leftJoined.rowCount shouldBe 3
+                        leftJoined.columnCount shouldBe 4
+                        leftJoined[0, "c"] shouldBe "extra"
+                        leftJoined[1, "c"] shouldBe "column"
+                        leftJoined[2, "c"].shouldBeNull()
+                    }
+                }
+            }
+
+            context("Right Join") {
+                test("Basic") {
+                    rightJoin(left, right) { leftRow, rightRow ->
+                        leftRow["a"] == rightRow["id"]
+                    }.asClue { rightJoined ->
+                        rightJoined.rowCount shouldBe 3
+                        rightJoined.columnCount shouldBe 4
+                        rightJoined[0, "c"] shouldBe "extra"
+                        rightJoined[2, "c"] shouldBe "column"
+                        rightJoined[1, "c"] shouldBe "detail"
+                    }
+                }
+            }
+
+            val outerJoin1 = dataset {
+                column("EmpID", List(5) { it + 1 })
+                column("EmpName") {
+                    add("Charlotte Robinson")
+                    add("Madison Phillips")
+                    add("Emma Hernandez")
+                    add("Samantha Sanchez")
+                    add("Sadie Ward")
+                }
+                column("City") {
+                    add("Chicago")
+                    add("Dallas")
+                    add("Phoenix")
+                    add("San Diego")
+                    add("San Antonio")
+                }
+                column("Designation") {
+                    add("Consultant")
+                    add("Senior Analyst")
+                    add("Senior Analyst")
+                    add("Principal Consultant")
+                    add("Consultant")
+                }
+            }
+
+            val outerJoin2 = dataset {
+                column("EmpID", 1, 2, 3, 4, 5, 6, 10)
+                column("DepartmentID", 0, 1, 2, 3, 4, 2, 4)
+                column("DepartmentName") {
+                    add("Executive")
+                    add("Document Control")
+                    add("Finance")
+                    add("Engineering")
+                    add("Facilities and Maintenance")
+                    add("Finance")
+                    add("Facilities and Maintenance")
+                }
+            }
+
+            // https://www.sqlshack.com/sql-outer-join-overview-and-examples/
+            context("Outer Join") {
+                test("Basic") {
+                    eval<Dataset>("utils.joiner(outerJoin1, outerJoin2, 'outer', lambda d1, d2: (d1[0] == d2[0]))").asClue {
+                        it.columnNames shouldBe listOf(
+                            "EmpID",
+                            "EmpName",
+                            "City",
+                            "Designation",
+                            "EmpID",
+                            "Department_ID",
+                            "DepartmentName",
+                        )
+                        it.columnTypes shouldBe listOf(
+                            Int::class.javaObjectType,
+                            String::class.java,
+                            String::class.java,
+                            String::class.java,
+                            Int::class.javaObjectType,
+                            Int::class.javaObjectType,
+                            String::class.java,
+                        )
+                        it.getColumnAsList(6) shouldBe listOf(
+                            "Executive",
+                            "Document Control",
+                            "Finance",
+                            "Engineering",
+                            "Facilities and Maintenance",
+                            "Finance",
+                            null,
+                            null,
+                            null,
+                            "Facilities and Maintenance",
+                        )
+                        it.rowCount shouldBe 10
+                    }
+                }
+            }
+
+            context("Inner Join") {
+                test("Basic") {
+                    eval<Dataset>("utils.joiner(outerJoin1, outerJoin2, 'inner', lambda d1, d2: (d1[0] == d2[0]))").asClue {
+                        it.columnNames shouldBe listOf(
+                            "EmpID",
+                            "EmpName",
+                            "City",
+                            "Designation",
+                            "EmpID",
+                            "Department_ID",
+                            "DepartmentName",
+                        )
+                        it.columnTypes shouldBe listOf(
+                            Int::class.javaObjectType,
+                            String::class.java,
+                            String::class.java,
+                            String::class.java,
+                            Int::class.javaObjectType,
+                            Int::class.javaObjectType,
+                            String::class.java,
+                        )
+                        it.getColumnAsList(5) shouldBe listOf(0, 1, 2, 3, 4, 2, 4)
+                        it.rowCount shouldBe 7
+                    }
+                }
             }
         }
     }
